@@ -22,7 +22,7 @@ def get_embeddings():
 @st.cache_resource
 def get_llm():
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY"),
     )
 
