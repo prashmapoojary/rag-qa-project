@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from rag import ask
 
 load_dotenv()
@@ -32,8 +32,20 @@ if "vectorstore" not in st.session_state:
 
 llm = get_llm()
 
+def get_loader(path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        return PyPDFLoader(path)
+    elif ext == ".docx":
+        return Docx2txtLoader(path)
+    elif ext == ".txt":
+        return TextLoader(path, encoding="utf-8")
+    else:
+        raise ValueError(f"Unsupported file type: {ext}")
+
 st.sidebar.header("Add a document")
-uploaded_file = st.sidebar.file_uploader("Upload a PDF", type="pdf")
+
+uploaded_file = st.sidebar.file_uploader("Upload a document", type=["pdf", "docx", "txt"])
 if uploaded_file is not None:
     if st.sidebar.button("Add to knowledge base"):
         os.makedirs("docs", exist_ok=True)
@@ -42,7 +54,7 @@ if uploaded_file is not None:
             f.write(uploaded_file.getbuffer())
 
         with st.sidebar.status("Processing document..."):
-            loader = PyPDFLoader(save_path)
+            loader = get_loader(save_path)
             pages = loader.load()
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
             chunks = splitter.split_documents(pages)
