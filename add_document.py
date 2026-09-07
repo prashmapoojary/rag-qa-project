@@ -1,46 +1,80 @@
 import os
-import sys
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import streamlit as st
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from rag import ask
 
-DOCS_DIR = "docs"
-INDEX_DIR = "faiss_index"
+load_dotenv()
 
-def add_document(filename):
-    path = os.path.join(DOCS_DIR, filename)
-    if not os.path.exists(path):
-        print(f"File not found: {path}")
-        return
+st.set_page_config(page_title="RAG Research Assistant", page_icon="📚")
+st.title("📚 RAG Research Assistant")
+st.caption("Ask questions about a curated set of Retrieval-Augmented Generation papers.")
 
-    print(f"Loading {filename}...")
-    loader = PyPDFLoader(path)
-    pages = loader.load()
+@st.cache_resource
+def get_embeddings():
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-    chunks = splitter.split_documents(pages)
-    for chunk in chunks:
-        chunk.metadata["source"] = filename
+@st.cache_resource
+def get_llm():
+    return ChatGoogleGenerativeAI(
+        model="gemini-flash-latest",
+        google_api_key=os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY"),
+    )
 
-    print(f"Created {len(chunks)} chunks from {filename}")
+if "vectorstore" not in st.session_state:
+    st.session_state.vectorstore = FAISS.load_local(
+        "faiss_index", get_embeddings(), allow_dangerous_deserialization=True
+    )
 
-    print("Loading embedding model...")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+llm = get_llm()
 
-    print("Loading existing index...")
-    vectorstore = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
+# --- Sidebar: add a new document live ---
+st.sidebar.header("Add a document")
+uploaded_file = st.sidebar.file_uploader("Upload a PDF", type="pdf")
+if uploaded_file is not None:
+    if st.sidebar.button("Add to knowledge base"):
+        os.makedirs("docs", exist_ok=True)
+        save_path = os.path.join("docs", uploaded_file.name)
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
-    print("Adding new chunks to index...")
-    vectorstore.add_documents(chunks)
+        with st.sidebar.status("Processing document..."):
+            loader = PyPDFLoader(save_path)
+            pages = loader.load()
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+            chunks = splitter.split_documents(pages)
+            for chunk in chunks:
+                chunk.metadata["source"] = uploaded_file.name
 
-    vectorstore.save_local(INDEX_DIR)
-    print(f"Done. '{filename}' added to the index.")
+            st.session_state.vectorstore.add_documents(chunks)
+            st.session_state.vectorstore.save_local("faiss_index")
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python add_document.py <filename.pdf>")
-        print("(the file must already be inside the 'docs' folder)")
-        sys.exit(1)
+        st.sidebar.success(f"Added '{uploaded_file.name}' ({len(chunks)} chunks) to the knowledge base!")
 
-    add_document(sys.argv[1])
+# --- Main chat ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+question = st.chat_input("Ask a question about the papers...")
+
+if question:
+    st.session_state.messages.append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            answer, sources = ask(question, st.session_state.vectorstore, llm)
+            used = ", ".join(sorted(set(s.metadata.get("source", "unknown") for s in sources)))
+            full_response = f"{answer}\n\n**Sources:** {used}"
+            st.markdown(full_response)
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
