@@ -12,7 +12,8 @@ load_dotenv()
 
 st.set_page_config(page_title="RAG Research Assistant", page_icon="📚")
 st.title("📚 RAG Research Assistant")
-st.caption("Ask questions about a curated set of Retrieval-Augmented Generation papers.")
+
+st.caption("Upload any documents (PDF, Word, or text) and ask questions — answers are grounded in what you've added.")
 
 @st.cache_resource
 def get_embeddings():
@@ -21,7 +22,7 @@ def get_embeddings():
 @st.cache_resource
 def get_llm():
     return ChatGoogleGenerativeAI(
-        model="gemini-flash-latest",
+        model="gemini-2.5-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY"),
     )
 

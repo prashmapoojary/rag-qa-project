@@ -25,6 +25,7 @@ Context:
 Question: {question}
 
 Answer:"""
+
 def extract_text(content):
     if isinstance(content, str):
         return content
@@ -37,20 +38,20 @@ def extract_text(content):
                 parts.append(item)
         return "\n".join(parts)
     return str(content)
+
 def ask(question, vectorstore, llm, k=4):
     docs = vectorstore.similarity_search(question, k=k)
     prompt = build_prompt(question, docs)
     response = llm.invoke(prompt)
-
     return extract_text(response.content), docs
+
 if __name__ == "__main__":
     print("Loading vector store...")
-
     vectorstore = load_vectorstore()
 
     print("Connecting to Gemini...")
     llm = ChatGoogleGenerativeAI(
-        model="gemini-flash-latest",
+        model="gemini-2.5-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY"),
     )
 
